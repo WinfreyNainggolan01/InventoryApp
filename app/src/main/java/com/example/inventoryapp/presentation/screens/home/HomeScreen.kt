@@ -3,18 +3,24 @@ package com.example.inventoryapp.presentation.screens.home
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.inventoryapp.presentation.viewmodel.ProductViewModel
 
 @Composable
 fun HomeScreen(
     viewModel: ProductViewModel = hiltViewModel()
 ) {
-    val products by viewModel.products.collectAsState()
+//    val products by viewModel.products.collectAsState()
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val products = uiState.products
 
     val totalProduct = products.size
     val totalStock = products.sumOf { it.stock }
@@ -49,7 +55,6 @@ fun HomeScreen(
             )
         }
 
-        // Peringatan stok rendah
         if (lowStockCount > 0) {
             Card(
                 colors = CardDefaults.cardColors(
@@ -80,7 +85,6 @@ fun HomeScreen(
     }
 }
 
-// Komponen kartu statistik kecil
 @Composable
 fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
     Card(modifier = modifier) {

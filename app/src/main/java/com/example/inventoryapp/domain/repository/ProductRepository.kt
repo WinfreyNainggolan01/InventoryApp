@@ -9,4 +9,10 @@ interface ProductRepository{
     suspend fun addProduct(product: Product)
     suspend fun updateProduct(product: Product)
     suspend fun deleteProduct(product: Product)
+
+    suspend fun searchProducts(query: String): Flow<List<Product>>
+    suspend fun updateStock(productId: Int, newStock: Int)
+
+    suspend fun getProductsByCategory(categoryId: Int): Flow<List<Product>>
+
 }

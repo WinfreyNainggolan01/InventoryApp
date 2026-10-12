@@ -13,4 +13,11 @@ class AddProductUseCase @Inject constructor(
         require(product.stock >= 0) {"Stock tidak boleh negatif"}
         repository.addProduct(product)
     }
+
+    suspend fun execute(product: Product) {
+        require(product.name.isNotBlank()) { "Nama produk tidak boleh kosong" }
+        require (product.price >= 0) { "Harga tidak boleh negatif" }
+        require (product.stock >= 0) { "Stock tidak boleh negatif" }
+        repository.addProduct(product)
+    }
 }

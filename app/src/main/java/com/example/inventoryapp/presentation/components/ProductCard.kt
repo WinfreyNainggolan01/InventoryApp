@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,7 +17,8 @@ import com.example.inventoryapp.domain.model.Product
 fun ProductCard(
     product: Product,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onStockAdjust: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier
@@ -40,7 +42,7 @@ fun ProductCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Kategori: ${product.category}",
+                    text = "Kategori: ${product.categoryName}",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
@@ -56,13 +58,31 @@ fun ProductCard(
                         MaterialTheme.colorScheme.onSurface
                 )
             }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Hapus Produk",
-                    tint = MaterialTheme.colorScheme.error
-                )
+
+            Row{
+                onStockAdjust?.let { action ->
+                    IconButton(onClick = action) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Atur Stock",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                onDelete?.let { action ->
+                    IconButton(onClick = action) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Hapus Produk",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
             }
+
+
         }
     }
 }

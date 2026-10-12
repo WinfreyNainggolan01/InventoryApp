@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.inventoryapp.presentation.viewmodel.ProductViewModel
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
@@ -19,10 +21,9 @@ fun DetailScreen(
     onNavigateBack: () -> Unit,
     viewModel: ProductViewModel = hiltViewModel()
 ) {
-    val products by viewModel.products.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Cari produk berdasarkan ID dari daftar yang sudah ada di ViewModel
-    val product = products.find { it.id == productId }
+    val product = uiState.products.find { it.id == productId }
 
     Scaffold(
         topBar = {
@@ -60,7 +61,7 @@ fun DetailScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                DetailRow(label = "Kategori", value = product.category)
+                DetailRow(label = "Kategori", value = product.categoryName)
                 DetailRow(label = "Harga", value = "Rp ${"%,.0f".format(product.price)}")
                 DetailRow(label = "Stok", value = "${product.stock} unit")
 

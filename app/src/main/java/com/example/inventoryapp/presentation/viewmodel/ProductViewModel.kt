@@ -2,72 +2,180 @@ package com.example.inventoryapp.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.inventoryapp.domain.model.Category
 import com.example.inventoryapp.domain.model.Product
 import com.example.inventoryapp.domain.usecase.AddProductUseCase
 import com.example.inventoryapp.domain.usecase.DeleteProductUseCase
+import com.example.inventoryapp.domain.usecase.GetCategoriesUseCase
 import com.example.inventoryapp.domain.usecase.GetProductsUseCase
+import com.example.inventoryapp.domain.usecase.SearchProductUseCase
 import com.example.inventoryapp.domain.usecase.UpdateProductUseCase
+import com.example.inventoryapp.domain.usecase.UpdateStockUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.WhileSubscribed
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
+
+data class InventoryUiState(
+    val products: List<Product> = emptyList(),
+    val categories: List<Category> = emptyList(),
+    val searchQuery: String = "",
+    val selectedCategoryId: Int? = null,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val totalInventoryValue: Double = 0.0,
+    val lowStockCount: Int = 0
+)
 
 @HiltViewModel
 class ProductViewModel @Inject constructor(
     private val getProductsUseCase: GetProductsUseCase,
     private val addProductUseCase: AddProductUseCase,
     private val updateProductUseCase: UpdateProductUseCase,
-    private val deleteProductUseCase: DeleteProductUseCase
+    private val deleteProductUseCase: DeleteProductUseCase,
+    private val searchProductUseCase: SearchProductUseCase,
+    private val getCategoriesUseCase: GetCategoriesUseCase,
+    private val updateStockUseCase: UpdateStockUseCase
 ) : ViewModel() {
 
-    val products: StateFlow<List<Product>> = getProductsUseCase()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    private val _searchQuery = MutableStateFlow("")
+    private val _selectedCategoryId = MutableStateFlow<Int?>(null)
+    private val _uiState = MutableStateFlow(InventoryUiState())
+    val uiState: StateFlow<InventoryUiState> = _uiState.asStateFlow()
 
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message
+    init {
+        observeProducts()
+        observeCategories()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+    private fun observeProducts() {
+        combine(
+            _searchQuery.debounce(300.milliseconds),
+            _selectedCategoryId
+        ) { query, categoryId ->
+            Pair(query, categoryId)
+        }
+            .flatMapLatest { (query, categoryId) ->
+                val flow = if (query.isBlank()) {
+                    getProductsUseCase()
+                } else {
+                    searchProductUseCase(query)
+                }
+
+                flow.map { products ->
+                    if (categoryId != null) {
+                        products.filter { it.categoryId == categoryId }
+                    } else {
+                        products
+                    }
+                }
+            }
+            .onEach { products ->
+                _uiState.update { it.copy(products = products, isLoading = false) }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun observeCategories() {
+        getCategoriesUseCase()
+            .onEach { categories ->
+                _uiState.update { it.copy(categories = categories) }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun onCategoryFilterChanged(categoryId: Int?) {
+        _selectedCategoryId.value = categoryId
+        _uiState.update { it.copy(selectedCategoryId = categoryId) }
+    }
 
     fun addProduct(product: Product) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
-                addProductUseCase(product)
-                _message.value = "Produk berhasil ditambahkan"
+                addProductUseCase.execute(product)
             } catch (e: Exception) {
-                _message.value = e.message
+                if (e is CancellationException) throw e
+                _uiState.update {
+                    it.copy(errorMessage = e.localizedMessage ?: "Gagal menambahkan produk")
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
 
     fun updateProduct(product: Product) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 updateProductUseCase(product)
-                _message.value = "Produk berhasil diperbarui"
             } catch (e: Exception) {
-                _message.value = e.message
+                if (e is CancellationException) throw e
+                _uiState.update {
+                    it.copy(errorMessage = e.localizedMessage ?: "Gagal memperbaharui product")
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
 
     fun deleteProduct(product: Product) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             try {
                 deleteProductUseCase(product)
-                _message.value = "Produk berhasil dihapus"
             } catch (e: Exception) {
-                _message.value = e.message
+                if (e is CancellationException) throw e
+                _uiState.update {
+                    it.copy(errorMessage = e.localizedMessage ?: "Gagal menghapus produk")
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
+    fun updateStock(product: Product, change: Int, note: String = "") {
+        viewModelScope.launch {
+            val result = updateStockUseCase(
+                productId = product.id,
+                currentStock = product.stock,
+                change = change,
+                note = note
+            )
+            when (result) {
+                is UpdateStockUseCase.Result.Error -> {
+                    _uiState.update { it.copy(errorMessage = result.message) }
+                }
+                UpdateStockUseCase.Result.Success -> {
+                    _uiState.update { it.copy(errorMessage = null) }
+                }
             }
         }
     }
 
     fun clearMessage() {
-        _message.value = null
+        _uiState.update { it.copy(errorMessage = null) }
     }
 }
