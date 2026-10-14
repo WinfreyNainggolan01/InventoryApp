@@ -2,9 +2,11 @@ package com.example.inventoryapp.di
 
 import com.example.inventoryapp.data.repository.CategoryRepositoryImpl
 import com.example.inventoryapp.data.repository.ProductRepositoryImpl
+import com.example.inventoryapp.data.repository.RemoteProductRepositoryImpl
 import com.example.inventoryapp.data.repository.TransactionLogRepositoryImpl
 import com.example.inventoryapp.domain.repository.CategoryRepository
 import com.example.inventoryapp.domain.repository.ProductRepository
+import com.example.inventoryapp.domain.repository.RemoteProductRepository
 import com.example.inventoryapp.domain.repository.TransactionLogRepository
 import dagger.Binds
 import dagger.Module
@@ -33,4 +35,10 @@ abstract class RepositoryModule {
     abstract fun bindTransactionLogRepository(
         impl: TransactionLogRepositoryImpl
     ): TransactionLogRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRemoteProductRepository(
+        impl: RemoteProductRepositoryImpl
+    ): RemoteProductRepository
 }

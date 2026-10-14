@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.inventoryapp.domain.model.Category
 import com.example.inventoryapp.domain.model.Product
+import com.example.inventoryapp.domain.repository.RemoteProductRepository
 import com.example.inventoryapp.domain.usecase.AddProductUseCase
 import com.example.inventoryapp.domain.usecase.DeleteProductUseCase
 import com.example.inventoryapp.domain.usecase.GetCategoriesUseCase
@@ -29,7 +30,13 @@ import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
+enum class DataSouceOption {
+    LOCAL,
+    REMOTE
+}
+
 data class InventoryUiState(
+//    LOCAL
     val products: List<Product> = emptyList(),
     val categories: List<Category> = emptyList(),
     val searchQuery: String = "",
@@ -37,7 +44,13 @@ data class InventoryUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val totalInventoryValue: Double = 0.0,
-    val lowStockCount: Int = 0
+    val lowStockCount: Int = 0,
+
+//    REMOTE
+    val selectedDataSource: DataSouceOption = DataSouceOption.LOCAL,
+    val remoteProducts: List<Product> = emptyList(),
+    val isRemoteLoading: Boolean = false,
+    val remoteErrorMessage: String? = null
 )
 
 @HiltViewModel
@@ -48,7 +61,9 @@ class ProductViewModel @Inject constructor(
     private val deleteProductUseCase: DeleteProductUseCase,
     private val searchProductUseCase: SearchProductUseCase,
     private val getCategoriesUseCase: GetCategoriesUseCase,
-    private val updateStockUseCase: UpdateStockUseCase
+    private val updateStockUseCase: UpdateStockUseCase,
+
+    private val remoteProductRepository: RemoteProductRepository
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -61,6 +76,40 @@ class ProductViewModel @Inject constructor(
         observeCategories()
     }
 
+
+    // REMOTE
+    fun setDataSource(source: DataSouceOption) {
+        _uiState.update { it.copy(selectedDataSource = source) }
+        if(source == DataSouceOption.REMOTE && _uiState.value.remoteProducts.isEmpty()) {
+            fetchRemoteProducts()
+        }
+    }
+
+    fun fetchRemoteProducts() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRemoteLoading = true, remoteErrorMessage = null) }
+
+            val result = remoteProductRepository.getRemoteProduct()
+            result.onSuccess { remoteList ->
+                _uiState.update {
+                    it.copy(
+                        remoteProducts = remoteList,
+                        isRemoteLoading = false,
+                        remoteErrorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteLoading = false,
+                        remoteErrorMessage = error.localizedMessage ?: "Gagal mengambil data dari server"
+                    )
+                }
+            }
+        }
+    }
+
+    // LOCAL ROOM
     @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     private fun observeProducts() {
         combine(
