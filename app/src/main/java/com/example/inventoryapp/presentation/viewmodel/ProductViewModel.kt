@@ -2,15 +2,22 @@ package com.example.inventoryapp.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.inventoryapp.data.remote.dto.CreateProductRequestDto
+import com.example.inventoryapp.data.remote.dto.UpdateProductRequestDto
 import com.example.inventoryapp.domain.model.Category
 import com.example.inventoryapp.domain.model.Product
 import com.example.inventoryapp.domain.repository.RemoteProductRepository
 import com.example.inventoryapp.domain.usecase.AddProductUseCase
+import com.example.inventoryapp.domain.usecase.CreateRemoteProductUseCase
 import com.example.inventoryapp.domain.usecase.DeleteProductUseCase
+import com.example.inventoryapp.domain.usecase.DeleteRemoteProductUseCase
 import com.example.inventoryapp.domain.usecase.GetCategoriesUseCase
 import com.example.inventoryapp.domain.usecase.GetProductsUseCase
+import com.example.inventoryapp.domain.usecase.GetRemoteCategoriesUseCase
 import com.example.inventoryapp.domain.usecase.SearchProductUseCase
 import com.example.inventoryapp.domain.usecase.UpdateProductUseCase
+import com.example.inventoryapp.domain.usecase.UpdateRemoteProductUseCase
+import com.example.inventoryapp.domain.usecase.UpdateRemoteStockUseCase
 import com.example.inventoryapp.domain.usecase.UpdateStockUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,8 +56,11 @@ data class InventoryUiState(
 //    REMOTE
     val selectedDataSource: DataSouceOption = DataSouceOption.LOCAL,
     val remoteProducts: List<Product> = emptyList(),
+    val remoteCategories: List<Category> = emptyList(),
     val isRemoteLoading: Boolean = false,
-    val remoteErrorMessage: String? = null
+    val isRemoteActionLoading: Boolean = false,
+    val remoteErrorMessage: String? = null,
+    val userFeedbackMessage: String? = null
 )
 
 @HiltViewModel
@@ -63,7 +73,13 @@ class ProductViewModel @Inject constructor(
     private val getCategoriesUseCase: GetCategoriesUseCase,
     private val updateStockUseCase: UpdateStockUseCase,
 
-    private val remoteProductRepository: RemoteProductRepository
+    // REMOTE
+    private val remoteProductRepository: RemoteProductRepository,
+    private val createRemoteProductUseCase: CreateRemoteProductUseCase,
+    private val updateRemoteProductUseCase: UpdateRemoteProductUseCase,
+    private val deleteRemoteProductUseCase: DeleteRemoteProductUseCase,
+    private val updateRemoteStockUseCase: UpdateRemoteStockUseCase,
+    private val getRemoteCategoriesUseCase: GetRemoteCategoriesUseCase
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -80,16 +96,21 @@ class ProductViewModel @Inject constructor(
     // REMOTE
     fun setDataSource(source: DataSouceOption) {
         _uiState.update { it.copy(selectedDataSource = source) }
-        if(source == DataSouceOption.REMOTE && _uiState.value.remoteProducts.isEmpty()) {
-            fetchRemoteProducts()
+        if(source == DataSouceOption.REMOTE) {
+            if(_uiState.value.remoteProducts.isEmpty()) {
+                fetchRemoteProducts()
+            }
+            if(_uiState.value.remoteCategories.isEmpty()) {
+                fetchRemoteCategories()
+            }
         }
     }
 
-    fun fetchRemoteProducts() {
+    fun fetchRemoteProducts(search: String? = null, categoryId: Int? = null) {
         viewModelScope.launch {
             _uiState.update { it.copy(isRemoteLoading = true, remoteErrorMessage = null) }
 
-            val result = remoteProductRepository.getRemoteProduct()
+            val result = remoteProductRepository.getRemoteProduct(search, categoryId)
             result.onSuccess { remoteList ->
                 _uiState.update {
                     it.copy(
@@ -106,6 +127,143 @@ class ProductViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    fun fetchRemoteCategories(){
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRemoteLoading = true, remoteErrorMessage = null) }
+
+            val result = getRemoteCategoriesUseCase.execute()
+            result.onSuccess { categories ->
+                _uiState.update {
+                    it.copy(
+                        remoteCategories = categories,
+                        isRemoteLoading = false,
+                        remoteErrorMessage = null
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteLoading = false,
+                        remoteErrorMessage = error.localizedMessage ?: "Gagal mengambil data kategori dari server"
+                    )
+                }
+            }
+        }
+    }
+
+    fun createRemoteProducts(name: String, categoryId: Int, price: Double, stock: Int, description: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRemoteActionLoading = true)}
+            val req = CreateProductRequestDto(name, categoryId, price, stock, description)
+            val result = createRemoteProductUseCase.execute(req)
+
+            result.onSuccess { newProduct ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteActionLoading = false,
+                        userFeedbackMessage = "Produk ${newProduct.name} berhasil disimpan ke server"
+                    )
+                }
+                fetchRemoteProducts()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteActionLoading = false,
+                        userFeedbackMessage = err.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun updateRemoteProduct(id: Int, name: String, categoryId: Int, price: Double, stock: Int, description: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isRemoteActionLoading = true
+                )
+            }
+            val req = UpdateProductRequestDto(name, categoryId, price, stock, description)
+            val result = updateRemoteProductUseCase.execute(id, req)
+
+            result.onSuccess { updated ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteActionLoading = false,
+                        userFeedbackMessage = "Produk ${updated.name} berhasil diperbaharui!"
+                    )
+                }
+                fetchRemoteProducts()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteActionLoading = false,
+                        userFeedbackMessage = "Gagal memperbaharui produk: ${err.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteRemoteProduct(id: Int) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isRemoteActionLoading = true
+                )
+            }
+            val result = deleteRemoteProductUseCase.execute(id)
+            result.onSuccess {
+                _uiState.update {
+                    val updatedList = it.remoteProducts.filter { p -> p.id != id }
+                    it.copy(
+                        remoteProducts = updatedList,
+                        isRemoteActionLoading = false,
+                        userFeedbackMessage = "Produk berhasil dihapus dari server"
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isRemoteActionLoading = false,
+                        userFeedbackMessage = "Gagal menghapus produk: ${err.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun updateRemoteStockProduct(id: Int, newStock: Int) {
+        if (newStock < 0) return
+        viewModelScope.launch {
+            val result = updateRemoteStockUseCase.execute(id, newStock)
+            result.onSuccess { updated ->
+                _uiState.update {
+                    val updatedList = it.remoteProducts.map { p -> if (p.id == id) updated else p }
+                    it.copy(
+                        remoteProducts = updatedList,
+                        userFeedbackMessage = "Stok berhasil diubah menjadi ${updated.stock}"
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        userFeedbackMessage = "Gagal mengubah stok: ${err.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearFeedbackMessage(){
+        _uiState.update {
+            it.copy(
+                userFeedbackMessage = null,
+                remoteErrorMessage = null
+            )
         }
     }
 

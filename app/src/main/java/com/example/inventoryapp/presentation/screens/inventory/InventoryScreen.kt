@@ -35,7 +35,12 @@ fun InventoryScreen(
     var showStockDialog by remember { mutableStateOf(false) }
     var selectedProduct by remember { mutableStateOf<Product?>(null) }
 
+    var showAddEditRemoteDialog by remember { mutableStateOf(false) }
+    var selectedProductForEdit by remember { mutableStateOf<Product?>(null) }
+    var productToDelete by remember { mutableStateOf<Product?>(null) }
+
     val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { msg ->
             snackbarHostState.showSnackbar(msg)
@@ -43,13 +48,31 @@ fun InventoryScreen(
         }
     }
 
+    LaunchedEffect(uiState.userFeedbackMessage) {
+        uiState.userFeedbackMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.clearFeedbackMessage()
+        }
+    }
+
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            if (uiState.selectedDataSource == DataSouceOption.LOCAL) {
-                FloatingActionButton(onClick = onNavigateToAddProduct) {
-                    Icon(Icons.Default.Add, contentDescription = "Tambah Produk Lokal DB")
+            FloatingActionButton(
+                onClick = {
+                    if (uiState.selectedDataSource == DataSouceOption.LOCAL) {
+                        onNavigateToAddProduct()
+                    } else {
+                        selectedProductForEdit = null
+                        showAddEditRemoteDialog = true
+                    }
                 }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = if (uiState.selectedDataSource == DataSouceOption.LOCAL) "Tambah Lokal" else "Tambah Cloud"
+                )
             }
         }
     ) { paddingValues ->
@@ -66,9 +89,8 @@ fun InventoryScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Inventory",
+                    text = "Inventory Management",
                     style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(16.dp),
                     fontWeight = FontWeight.Bold
                 )
 
@@ -149,7 +171,8 @@ fun InventoryScreen(
                 }
 
                 LazyColumn(
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                 ) {
                     items(
                         items = uiState.products,
@@ -271,16 +294,26 @@ fun InventoryScreen(
                         }
                     }
 
-                    LazyColumn(modifier = Modifier.weight(1f)) {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
+                    ) {
                         items(
                             items = uiState.remoteProducts,
-                            key = { "remote_${it.id}" }
+                            key = { it.id }
                         ) { product ->
-                            ProductCard(
+                            RemoteProductCard(
                                 product = product,
-                                onClick = { null },
-                                onStockAdjust = { null },
-                                onDelete = { null }
+                                onEditClick = { prod ->
+                                    selectedProductForEdit = prod
+                                    showAddEditRemoteDialog = true
+                                },
+                                onDeleteClick = { prod ->
+                                    productToDelete = prod
+                                },
+                                onStockChange = { prod, newStock ->
+                                    viewModel.updateRemoteStockProduct(prod.id, newStock)
+                                },
                             )
                         }
                     }
@@ -296,6 +329,37 @@ fun InventoryScreen(
             onConfirm = { change, note ->
                 viewModel.updateStock(selectedProduct!!, change, note)
             }
+        )
+    }
+
+    // DIALOG FORM TAMBAH / EDIT KE CLOUD
+    if (showAddEditRemoteDialog) {
+        AddEditRemoteProductDialog(
+            productToEdit = selectedProductForEdit,
+            categories = uiState.remoteCategories,
+            isLoading = uiState.isRemoteActionLoading,
+            onDismiss = { showAddEditRemoteDialog = false },
+            onSave = { name, catId, price, stock, desc ->
+                if (selectedProductForEdit == null) {
+                    viewModel.createRemoteProducts(name, catId, price, stock, desc)
+                } else {
+                    viewModel.updateRemoteProduct(selectedProductForEdit!!.id, name, catId, price, stock, desc)
+                }
+                showAddEditRemoteDialog = false
+            }
+        )
+    }
+
+    // DIALOG KONFIRMASI HAPUS DARI CLOUD
+    productToDelete?.let { prod ->
+        DeleteConfirmationDialog(
+            productName = prod.name,
+            isLoading = uiState.isRemoteActionLoading,
+            onConfirm = {
+                viewModel.deleteRemoteProduct(prod.id)
+                productToDelete = null
+            },
+            onDismiss = { productToDelete = null }
         )
     }
 }
